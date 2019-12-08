@@ -20,7 +20,7 @@ enum command
 
 struct tapeheader
 {
-	byte LenLo1;
+    byte LenLo1;
     byte LenHi1;
     byte Flag1;
     byte HType;
@@ -259,7 +259,7 @@ void cmdList(char *FileNameIn)
 
 void showUsage(void)
 {
-	printf("TAPe UTility 1.0 by Sivvus\n");
+    printf("TAPe UTility 1.0 by Sivvus\n");
     printf("Usage: TAPUT command [options] FileIn [FileOut]\n");
     printf("       commands:\n");
     printf("           add\n");
@@ -317,8 +317,8 @@ int main(int argc, char** argv)
                     QuietMode = true;
                     break;
             }
-		else if (!Command)
-		{
+        else if (!Command)
+        {
             if (strcasecmp(argv[i], "add") == 0)
                 Command = cm_Add;
             if (strcasecmp(argv[i], "extract") == 0)
@@ -329,7 +329,7 @@ int main(int argc, char** argv)
                 Command = cm_Remove;
             if (strcasecmp(argv[i], "help") == 0)
                 Command = cm_Help;
-		}
+        }
         else if (FileNameIn[0] == '\0')
             strcpy(FileNameIn, argv[i]);
         else if (FileNameOut[0] == '\0')
@@ -343,13 +343,13 @@ int main(int argc, char** argv)
 
     if (!AllOk)
     {
-		if (!Command)
-			fprintf(stderr, "Unknown command\n");	
+        if (!Command)
+            fprintf(stderr, "Unknown command\n");   
         if (!QuietMode) 
-			showUsage();
+            showUsage();
         exit(1);
     }
-					
+                    
     switch (Command)
     {
         case cm_Add:
@@ -367,8 +367,8 @@ int main(int argc, char** argv)
             cmdRemove(FileNameIn);
             break;
        case cm_Help:
-			showUsage();
-			exit(0);
+            showUsage();
+            exit(0);
         default:
             break;
     }
