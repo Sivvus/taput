@@ -3,15 +3,17 @@
 Command line tool for processing TAP files.
 
 ## Usage
-
-Usage: TAPUT command options FileIn FileOut
-       commands:
-           add
-           extract
-           list
-           help
-       options:
-           -o <address>
-           -n <block name>
-           -b <block number>
-           -q
+<pre>
+Usage: TAPUT command [options] FileIn [FileOut]<br>
+commands:
+       add
+	   insert
+       extract
+       remove
+       list
+       help
+options:
+       -o &lt;address&gt;
+       -n &lt;block name&gt;
+       -b &lt;block number&gt;
+</pre>

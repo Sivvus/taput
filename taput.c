@@ -11,6 +11,7 @@ enum command
 {
     cm_Unknown,
     cm_Add,
+    cm_Insert,
     cm_Extract,
     cm_List,
     cm_Remove,
@@ -130,6 +131,60 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
     free(buffer);
 }
 
+void cmdInsert(char *FileNameIn, char *FileNameOut)
+{
+    if (SelectedBlock == 0)
+        SelectedBlock = 1;
+    bool isDone = false;
+    byte *bufferOut, *bufferIn, *pos, *endbuf;
+    size_t sizeIn  = LoadFile(&bufferIn, FileNameIn);
+    size_t sizeOut = LoadFile(&bufferOut, FileNameOut);
+    endbuf = bufferOut + sizeOut;
+    pos = bufferOut;
+    FILE *file;
+    file = fopen(FileNameOut, "wb");
+    if (!file)
+    {
+        fprintf(stderr, "Unable to open file \"%s\"\n", FileNameOut);
+        free(bufferOut);
+        free(bufferIn);
+        exit(1);              
+    }
+    for (int i = 1; pos < endbuf; i++)
+    {
+        if (SelectedBlock == i)
+        {
+            if (AddTapeHeader)
+            {
+               TapeHeader.HLenLo = (byte)(sizeIn & 0xff);
+               TapeHeader.HLenHi = (byte)(sizeIn >> 8);
+               TapeHeader.Parity1 = crc(&TapeHeader.Flag1, 18); 
+               fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
+            }
+            byte head[3];
+            head[0] = (sizeIn + 2) & 0xff;
+            head[1] = (sizeIn + 2) >> 8;
+            head[2] = 0xff;
+            fwrite(head, 3, 1, file);
+            fwrite(bufferIn, sizeIn, 1, file);
+            head[0] = crc(bufferIn, sizeIn);
+            head[0] = head[0] ^ 0xff;
+            fwrite(head, 1, 1, file);
+            isDone = true;
+        }
+        size_t blocksize = pos[0] | (pos[1] << 8);
+        fwrite(pos, blocksize + 2, 1, file);
+        pos = pos + blocksize + 2;   
+    }
+    fclose(file);
+    
+    if (!isDone)
+    {
+        fprintf(stderr, "Unable to insert file \"%s\" before block %d\n", FileNameIn, SelectedBlock);
+        exit(1);
+    }
+}
+
 void cmdExtract(char *FileNameIn, char *FileNameOut)
 {
     bool isDone = false;
@@ -216,7 +271,7 @@ void cmdList(char *FileNameIn)
     for (int i = 1; pos < endbuf; i++)
     {
         size_t blocksize = pos[0] | (pos[1] << 8);
-        switch (*(pos + 2))
+        switch (pos[2])
         {
             case 0x00:
                 Header = (struct tapeheader*)pos;
@@ -263,7 +318,9 @@ void showUsage(void)
     printf("Usage: TAPUT command [options] FileIn [FileOut]\n");
     printf("       commands:\n");
     printf("           add\n");
+    printf("           insert\n");
     printf("           extract\n");
+    printf("           remove\n");
     printf("           list\n");
     printf("           help\n");
     printf("       options:\n");
@@ -321,6 +378,8 @@ int main(int argc, char** argv)
         {
             if (strcasecmp(argv[i], "add") == 0)
                 Command = cm_Add;
+            if (strcasecmp(argv[i], "insert") == 0)
+                Command = cm_Insert;
             if (strcasecmp(argv[i], "extract") == 0)
                 Command = cm_Extract;
             if (strcasecmp(argv[i], "list") == 0)
@@ -356,8 +415,9 @@ int main(int argc, char** argv)
             ChkOutFile(FileNameOut);
             cmdAdd(FileNameIn, FileNameOut);
             break;
-        case cm_List:
-            cmdList(FileNameIn);
+        case cm_Insert:
+            ChkOutFile(FileNameOut);
+            cmdInsert(FileNameIn, FileNameOut);
             break;
         case cm_Extract:
             ChkOutFile(FileNameOut);
@@ -366,9 +426,12 @@ int main(int argc, char** argv)
         case cm_Remove:
             cmdRemove(FileNameIn);
             break;
-       case cm_Help:
+        case cm_List:
+            cmdList(FileNameIn);
+            break;
+        case cm_Help:
             showUsage();
-            exit(0);
+            break;
         default:
             break;
     }

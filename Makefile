@@ -5,21 +5,22 @@ LDFLAGS=-s -fmerge-all-constants -fno-ident -ffunction-sections -fdata-sections 
 OUT=taput
 OBJ=taput.o
 
+ifeq ($(OS),Windows_NT)
+	OUT:=$(OUT).exe
+endif
+
 .PHONY: all clean test install
 
 all: $(OUT)
 
 $(OUT): $(OBJ)
-	$(info )
 	$(info Linking to "$@")
 	$(CC) $(OBJ) -o $@ $(LDFLAGS)
 
 %.o: %.c
-	$(info )
 	$(info Compiling "$<" )
 	$(CC) $< -c $(CFLAGS)
 	
 clean:
-	$(info )
 	$(info Cleaning ..)
 	-rm -f $(OUT) $(OBJ)
