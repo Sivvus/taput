@@ -7,7 +7,7 @@ Command line tool for processing TAP files.
 Usage: TAPUT command [options] FileIn [FileOut]<br>
 commands:
        add
-	   insert
+       insert
        extract
        remove
        list
