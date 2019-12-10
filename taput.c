@@ -368,18 +368,21 @@ void showUsage(void)
 {
     printf("TAPe UTility 1.0 by Sivvus\n");
     printf("Usage: TAPUT command [options] FileIn [FileOut]\n");
-    printf("       commands:\n");
-    printf("           add\n");
-    printf("           insert\n");
-    printf("           extract\n");
-    printf("           remove\n");
-    printf("           list\n");
-    printf("           help\n");
-    printf("       options:\n");
-    printf("           -o <address>\n");
-    printf("           -n <block name>\n");
-    printf("           -b <block number>\n");
-    printf("           -q \n");
+    printf("commands:\n");
+    printf("    add           adds a file at the end of the \"tap\" image\n");
+    printf("    insert        inserts a file at the beginning of the image,\n");
+    printf("                  with the -b <n> option inserts a file before block <n>\n");
+    printf("    extract       extracts a block of data to a file\n");
+    printf("                  (requires an option -b <n>)\n");
+    printf("    remove        remove block of data from the image (requires -b <n>)\n");
+    printf("    list          list image content\n");
+    printf("    help          display this help and exit\n");
+    printf("options:\n");
+    printf("    -o <addr>     implies creating a block header,\n");
+    printf("                  <addr> sets the origin address\n");
+    printf("    -n <name>     implies creating a block header,\n");
+    printf("                  <name> sets a block name\n");
+    printf("    -b <number>   sets the block number\n");
     printf("\n");
 }
 
