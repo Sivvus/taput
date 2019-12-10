@@ -71,10 +71,7 @@ size_t LoadFile(byte **Dest, char *FileName)
     size_t size;
     file = fopen(FileName, "rb");
     if (!file)
-    {
-        fprintf(stderr, "Unable to open file \"%s\"\n", FileName);
-        exit(1);
-    }  
+        return 0;
     fseek(file, 0, SEEK_END);
     size = ftell(file);
     fseek(file, 0, SEEK_SET);
@@ -93,42 +90,66 @@ size_t LoadFile(byte **Dest, char *FileName)
 
 void cmdAdd(char *FileNameIn, char *FileNameOut)
 {
-    FILE *file;
-    byte *buffer;
-    byte head[3];
-    size_t size = LoadFile(&buffer, FileNameIn);
-    if (size > 0xffff)
+    byte *bufferOut, *bufferIn, *pos, *endbuf;
+    size_t sizeIn  = LoadFile(&bufferIn, FileNameIn);
+    if (sizeIn > 0xffff)
     {
         fprintf(stderr, "The file \"%s\" is too large\n", FileNameIn);
-        free(buffer);
+        free(bufferIn);
         exit(1);
     }
-
-    file = fopen(FileNameOut, "ab");
+    if (sizeIn == 0)
+    {
+        fprintf(stderr, "Unable to open file \"%s\"\n", FileNameIn);
+        exit(1);
+    }         
+        
+    size_t sizeOut = LoadFile(&bufferOut, FileNameOut);
+    endbuf = bufferOut + sizeOut;
+    pos = bufferOut;
+    FILE *file;
+    file = fopen(FileNameOut, "wb");
     if (!file)
     {
-        fprintf(stderr, "Unable to open file \"%s\"\n", FileNameOut);
-        free(buffer);
-        exit(1);
+        fprintf(stderr, "Unable to create file \"%s\"\n", FileNameOut);
+        free(bufferOut);
+        free(bufferIn);
+        exit(1);              
     }
+    
+    if (sizeOut > 0)
+    {
+        for (int i = 1; pos < endbuf; i++)
+        {
+            if (SelectedBlock == i)
+            {
+            }
+            size_t blocksize = pos[0] | (pos[1] << 8);
+            fwrite(pos, blocksize + 2, 1, file);
+            pos = pos + blocksize + 2;   
+        }
+        free(bufferOut);
+    }    
+
     if (AddTapeHeader)
     {
-       TapeHeader.HLenLo = (byte)(size & 0xff);
-       TapeHeader.HLenHi = (byte)(size >> 8);
+       TapeHeader.HLenLo = (byte)(sizeIn & 0xff);
+       TapeHeader.HLenHi = (byte)(sizeIn >> 8);
        TapeHeader.Parity1 = crc(&TapeHeader.Flag1, 18); 
        fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
     }
-    head[0] = (size + 2) & 0xff;
-    head[1] = (size + 2) >> 8;
+    byte head[3];
+    head[0] = (sizeIn + 2) & 0xff;
+    head[1] = (sizeIn + 2) >> 8;
     head[2] = 0xff;
     fwrite(head, 3, 1, file);
-    fwrite(buffer, size, 1, file);
-    head[0] = crc(buffer, size);
+    fwrite(bufferIn, sizeIn, 1, file);
+    head[0] = crc(bufferIn, sizeIn);
     head[0] = head[0] ^ 0xff;
     fwrite(head, 1, 1, file);
     
+    free(bufferIn);
     fclose(file);
-    free(buffer);
 }
 
 void cmdInsert(char *FileNameIn, char *FileNameOut)
@@ -137,15 +158,34 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
         SelectedBlock = 1;
     bool isDone = false;
     byte *bufferOut, *bufferIn, *pos, *endbuf;
+
     size_t sizeIn  = LoadFile(&bufferIn, FileNameIn);
+    if (sizeIn > 0xffff)
+    {
+        fprintf(stderr, "The file \"%s\" is too large\n", FileNameIn);
+        free(bufferIn);
+        exit(1);
+    }
+    if (sizeIn == 0)
+    {
+        fprintf(stderr, "Unable to open file \"%s\"\n", FileNameIn);
+        exit(1);
+    }   
+    
     size_t sizeOut = LoadFile(&bufferOut, FileNameOut);
+    if (sizeOut == 0)
+    {
+        fprintf(stderr, "Unable to open file \"%s\"\n", FileNameOut);
+        exit(1);
+    } 
+    
     endbuf = bufferOut + sizeOut;
     pos = bufferOut;
     FILE *file;
     file = fopen(FileNameOut, "wb");
     if (!file)
     {
-        fprintf(stderr, "Unable to open file \"%s\"\n", FileNameOut);
+        fprintf(stderr, "Unable to create file \"%s\"\n", FileNameOut);
         free(bufferOut);
         free(bufferIn);
         exit(1);              
@@ -177,6 +217,8 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
         pos = pos + blocksize + 2;   
     }
     fclose(file);
+    free(bufferOut);
+    free(bufferIn);
     
     if (!isDone)
     {
@@ -191,6 +233,11 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
     byte *buffer;
     byte *pos;
     size_t size = LoadFile(&buffer, FileNameIn);
+    if (size == 0)
+    {
+        fprintf(stderr, "Unable to open file \"%s\"\n", FileNameIn);
+        exit(1);
+    }
     byte *endbuf = buffer + size;
     pos = buffer;
     for (int i = 1; pos < endbuf; i++)
@@ -202,7 +249,7 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
           file = fopen(FileNameOut, "wb");
           if (!file)
           {
-            fprintf(stderr, "Unable to open file \"%s\"\n", FileNameOut);
+            fprintf(stderr, "Unable to create file \"%s\"\n", FileNameOut);
             free(buffer);
             exit(1);              
           }
@@ -226,13 +273,18 @@ void cmdRemove(char *FileName)
     bool isDone = false;
     byte *buffer, *pos, *endbuf;
     size_t size = LoadFile(&buffer, FileName);
+    if (size == 0)
+    {
+        fprintf(stderr, "Unable to open file \"%s\"\n", FileName);
+        exit(1);
+    }
     endbuf = buffer + size;
     pos = buffer;
     FILE *file;
     file = fopen(FileName, "wb");
     if (!file)
     {
-        fprintf(stderr, "Unable to open file \"%s\"\n", FileName);
+        fprintf(stderr, "Unable to create file \"%s\"\n", FileName);
         free(buffer);
         exit(1);              
     }
