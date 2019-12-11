@@ -121,9 +121,6 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
     {
         for (int i = 1; pos < endbuf; i++)
         {
-            if (SelectedBlock == i)
-            {
-            }
             size_t blocksize = pos[0] | (pos[1] << 8);
             fwrite(pos, blocksize + 2, 1, file);
             pos = pos + blocksize + 2;   
@@ -327,7 +324,7 @@ void cmdList(char *FileNameIn)
         {
             case 0x00:
                 Header = (struct tapeheader*)pos;
-                printf("#%-4.2d <HEAD>   %-8d %-6.4X", i, blocksize - 2, pos - buffer);
+                printf("#%-4.2d <HEAD>   %-8d %-6.4X", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
                 for (int i = 0; i < 10; i++) 
                     blockname[i] = Header->HName[i];
                 blockname[10] = '\0';
@@ -354,7 +351,7 @@ void cmdList(char *FileNameIn)
                 }
                 break;
             case 0xff:
-                printf("#%-4.2d <DATA>   %-8d %-6.4X\n", i, blocksize - 2, pos - buffer);
+                printf("#%-4.2d <DATA>   %-8d %-6.4X\n", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
                 break;
             default:
                 break;
