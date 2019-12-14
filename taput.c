@@ -5,6 +5,9 @@
 #include <ctype.h>
 #include <stdbool.h>
 
+#define MAX_SELECTED_BLOCKS 10
+#define MAX_PATH 260
+
 typedef unsigned char byte;
 
 enum command
@@ -14,8 +17,7 @@ enum command
     cm_Insert,
     cm_Extract,
     cm_List,
-    cm_Remove,
-    cm_Help
+    cm_Remove
 } Command
     = cm_Unknown;
 
@@ -47,11 +49,36 @@ struct tapeheader
 struct selectedblocks
 {
     int Count;
-    int Block[10];
+    int Block[MAX_SELECTED_BLOCKS];
 } SelectedBlocks;
     
 bool AddTapeHeader = false;
 bool QuietMode = false;
+
+void showUsage(void)
+{
+    printf("TAPe UTility v1.01 by Sivvus\n");
+    printf("Usage: TAPUT command [options] FileIn [FileOut]\n");
+    printf("commands:\n");
+    printf("    add             adds a file at the end of the \"tap\" image\n");
+    printf("                    if the image does not exist, it will be created\n");
+    printf("    insert          inserts a file at the beginning of the image,\n");
+    printf("                    with the -s <n> option inserts a file before block <n>\n");
+    printf("                    if several blocks are selected, inserts the file before each block\n");
+    printf("    extract         extracts a block of data to a file\n");
+    printf("                    (requires an option -s <n>)\n");
+    printf("    remove          remove blocks of data from the image (requires -s <n>[,<n>]..)\n");
+    printf("                    up to %d blocks can be selected\n", MAX_SELECTED_BLOCKS);
+    printf("    list            list image content\n");
+    printf("options:\n");
+    printf("    -o <addr>       implies creating a block header,\n");
+    printf("                    <addr> sets the origin address\n");
+    printf("    -n <name>       implies creating a block header,\n");
+    printf("                    <name> sets a block name\n");
+    printf("    -s <n>[,<n>]..  selects the block numbers (up to %d)\n", MAX_SELECTED_BLOCKS);
+    printf("    --help          display this help and exit\n");
+    printf("\n");
+}
 
 byte crc(byte *start, int length)
 {
@@ -65,7 +92,9 @@ void ChkOutFile(char *FileName)
 {
     if (FileName[0] == '\0')
     {
-        fprintf(stderr, "Missing output file name\n");
+        fprintf(stderr, "No output file name was given\n");
+        if (!QuietMode) 
+            showUsage();
         exit(1);
     }
 }
@@ -353,8 +382,7 @@ void cmdList(char *FileNameIn)
             case 0x00:
                 Header = (struct tapeheader*)pos;
                 printf("#%-4.2d <HEAD>   %-8d %-6.4X", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
-                for (int i = 0; i < 10; i++) 
-                    blockname[i] = Header->HName[i];
+                strncpy(blockname, Header->HName, 10);
                 blockname[10] = '\0';
                 switch (Header->HType)
                 {
@@ -362,16 +390,16 @@ void cmdList(char *FileNameIn)
                         printf(" Program: %s LINE %d\n", blockname,
                             Header->HStartLo | (Header->HStartHi << 8));
                         break;
+                    case 1:
+                        printf(" Number array: %s\n", blockname);
+                        break;
+                    case 2:
+                        printf(" Character array: %s\n", blockname);
+                        break;
                     case 3:
                         printf(" Bytes:   %s CODE %d,%d\n", blockname,
                             Header->HStartLo | (Header->HStartHi << 8),
                             Header->HLenLo | (Header->HLenHi << 8));
-                        break;
-                    case 1:
-                        printf("Number array: %s\n", blockname);
-                        break;
-                    case 2:
-                        printf("Character array: %s\n", blockname);
                         break;
                     default:
                         printf("Unknown data type\n");
@@ -389,34 +417,10 @@ void cmdList(char *FileNameIn)
     free(buffer);
 }
 
-void showUsage(void)
-{
-    printf("TAPe UTility v1.01 by Sivvus\n");
-    printf("Usage: TAPUT command [options] FileIn [FileOut]\n");
-    printf("commands:\n");
-    printf("    add             adds a file at the end of the \"tap\" image\n");
-    printf("    insert          inserts a file at the beginning of the image,\n");
-    printf("                    with the -s <n> option inserts a file before block <n>\n");
-    printf("                    if several blocks are selected, inserts the file before each block\n");
-    printf("    extract         extracts a block of data to a file\n");
-    printf("                    (requires an option -s <n>)\n");
-    printf("    remove          remove blocks of data from the image (requires -s <n>[,<n>]..)\n");
-    printf("                    up to 10 blocks can be selected\n");
-    printf("    list            list image content\n");
-    printf("    help            display this help and exit\n");
-    printf("options:\n");
-    printf("    -o <addr>       implies creating a block header,\n");
-    printf("                    <addr> sets the origin address\n");
-    printf("    -n <name>       implies creating a block header,\n");
-    printf("                    <name> sets a block name\n");
-    printf("    -s <n>[,<n>]..  selects the block numbers (up to 10)\n");
-    printf("\n");
-}
-
 int main(int argc, char **argv)
 {
-    char FileNameIn[256] = "\0";
-    char FileNameOut[256] = "\0";
+    char FileNameIn[MAX_PATH + 1] = "\0";
+    char FileNameOut[MAX_PATH + 1] = "\0";
     bool AllOk = true;
     memset(&SelectedBlocks, 0, sizeof(SelectedBlocks));
     
@@ -426,14 +430,19 @@ int main(int argc, char **argv)
             switch (tolower(argv[i][1]))
             {
                 case 'n':
-                    if (strlen(argv[i + 1]) > 10)
+                    if ((i + 1) < argc)
                     {
-                        fprintf(stderr, "Blockname [-n] too long \"%s\"\n", argv[i + 1]);
-                        exit(1);
+                        if (strlen(argv[i + 1]) > 10)
+                        {
+                            fprintf(stderr, "Blockname [-n] too long \"%s\"\n", argv[i + 1]);
+                            exit(1);
+                        }
+                        AddTapeHeader = true;
+                        strncpy(TapeHeader.HName, argv[i + 1], strlen(argv[i + 1]));
+                        i++;
                     }
-                    AddTapeHeader = true;
-                    strncpy(TapeHeader.HName, argv[i + 1], strlen(argv[i + 1]));
-                    i++;
+                    else
+                        AllOk = false;
                     break;
                 case 'o':
                     if ((i + 1) < argc)
@@ -457,16 +466,17 @@ int main(int argc, char **argv)
                     {
                         int tmp = 0;
                         SelectedBlocks.Count++;
-                        for (char *Ptr = argv[i + 1]; *Ptr != '\0' && SelectedBlocks.Count < 11; Ptr++)
+                        for (char *c = argv[i + 1]; *c != '\0' && SelectedBlocks.Count <= MAX_SELECTED_BLOCKS; c++)
                         {
-                            if (*Ptr >= '0' && *Ptr <= '9')
-                                tmp = tmp * 10 + (*Ptr - '0');
-                            if (*Ptr == ',' && tmp != 0)
+                            if (*c >= '0' && *c <= '9')
+                                tmp = tmp * 10 + (*c - '0');
+                            else if (*c == ',' && tmp != 0)
                             {
                                 SelectedBlocks.Block[SelectedBlocks.Count - 1] = tmp;
                                 tmp = 0;
                                 SelectedBlocks.Count++;
                             }
+                            else break;
                         }
                         if (tmp == 0)
                             SelectedBlocks.Count--;
@@ -479,6 +489,13 @@ int main(int argc, char **argv)
                     break;
                 case 'q':
                     QuietMode = true;
+                    break;
+                case '-':
+                    if (strcasecmp(&argv[i][2], "help") == 0)
+                    {
+                        showUsage();
+                        return 0;
+                    }
                     break;
             }
         else if (!Command)
@@ -493,24 +510,29 @@ int main(int argc, char **argv)
                 Command = cm_List;
             if (strcasecmp(argv[i], "remove") == 0)
                 Command = cm_Remove;
-            if (strcasecmp(argv[i], "help") == 0)
-                Command = cm_Help;
         }
         else if (FileNameIn[0] == '\0')
-            strcpy(FileNameIn, argv[i]);
+            strncpy(FileNameIn, argv[i], MAX_PATH);
         else if (FileNameOut[0] == '\0')
-            strcpy(FileNameOut, argv[i]);
-        else if (Command != cm_Help)
+            strncpy(FileNameOut, argv[i], MAX_PATH);
+        else 
             AllOk = false;
     }
 
-    if (FileNameIn[0] == '\0' && Command != cm_Help)
+    if (!Command)
+    {
+        fprintf(stderr, "Unknown command\n"); 
         AllOk = false;
+    }
+
+    if (FileNameIn[0] == '\0')
+    {
+        fprintf(stderr, "No input file name was provided\n");   
+        AllOk = false;
+    }
 
     if (!AllOk)
     {
-        if (!Command)
-            fprintf(stderr, "Unknown command\n");   
         if (!QuietMode) 
             showUsage();
         exit(1);
@@ -535,9 +557,6 @@ int main(int argc, char **argv)
             break;
         case cm_List:
             cmdList(FileNameIn);
-            break;
-        case cm_Help:
-            showUsage();
             break;
         default:
             break;
