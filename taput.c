@@ -43,10 +43,15 @@ struct tapeheader
         0x00, 0x80, /* Param2 */
         0, /* Parity header */
     };
+
+struct selectedblocks
+{
+    int Count;
+    int Block[10];
+} SelectedBlocks;
     
 bool AddTapeHeader = false;
 bool QuietMode = false;
-int SelectedBlock = 0;
 
 byte crc(byte *start, int length)
 {
@@ -86,6 +91,14 @@ size_t LoadFile(byte **Dest, char *FileName)
     fclose(file);
     
     return size;
+}
+
+bool isSelected(int BlockNo)
+{
+    for (int i = 0; i < SelectedBlocks.Count; i++)
+        if (BlockNo == SelectedBlocks.Block[i])
+            return true;
+    return false;
 }
 
 void cmdAdd(char *FileNameIn, char *FileNameOut)
@@ -151,8 +164,11 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
 
 void cmdInsert(char *FileNameIn, char *FileNameOut)
 {
-    if (SelectedBlock == 0)
-        SelectedBlock = 1;
+    if (SelectedBlocks.Count == 0)
+    {
+        SelectedBlocks.Count = 1;
+        SelectedBlocks.Block[0] = 1;        
+    }
     bool isDone = false;
     byte *bufferOut, *bufferIn, *pos, *endbuf;
 
@@ -189,7 +205,7 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
     }
     for (int i = 1; pos < endbuf; i++)
     {
-        if (SelectedBlock == i)
+        if (isSelected(i))
         {
             if (AddTapeHeader)
             {
@@ -219,13 +235,19 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
     
     if (!isDone)
     {
-        fprintf(stderr, "Unable to insert file \"%s\" before block %d\n", FileNameIn, SelectedBlock);
+        fprintf(stderr, "Selected blocks were not found\n");
         exit(1);
     }
 }
 
 void cmdExtract(char *FileNameIn, char *FileNameOut)
 {
+    if (SelectedBlocks.Count == 0)
+    {
+        fprintf(stderr, "No block selected\n");
+        exit(1);
+    }
+    
     bool isDone = false;
     byte *buffer;
     byte *pos;
@@ -240,7 +262,7 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
     for (int i = 1; pos < endbuf; i++)
     {
         size_t blocksize = pos[0] | (pos[1] << 8);
-        if (i == SelectedBlock)
+        if (i == SelectedBlocks.Block[0])
         {
           FILE *file;
           file = fopen(FileNameOut, "wb");
@@ -260,13 +282,19 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
     
     if (!isDone)
     {
-        fprintf(stderr, "Block %d not found\n", SelectedBlock);
+        fprintf(stderr, "Selected block was not found\n");
         exit(1);
     }
 }
 
 void cmdRemove(char *FileName)
 {
+    if (SelectedBlocks.Count == 0)
+    {
+        fprintf(stderr, "No block selected\n");
+        exit(1);
+    }
+
     bool isDone = false;
     byte *buffer, *pos, *endbuf;
     size_t size = LoadFile(&buffer, FileName);
@@ -288,7 +316,7 @@ void cmdRemove(char *FileName)
     for (int i = 1; pos < endbuf; i++)
     {       
         size_t blocksize = pos[0] | (pos[1] << 8);
-        if (i != SelectedBlock)
+        if (!isSelected(i))
         {
             fwrite(pos, blocksize + 2, 1, file);
         } 
@@ -300,7 +328,7 @@ void cmdRemove(char *FileName)
 
     if (!isDone)
     {
-        fprintf(stderr, "Block %d not found\n", SelectedBlock);
+        fprintf(stderr, "Selected blocks were not found\n");
         exit(1);
     }
 }
@@ -363,32 +391,35 @@ void cmdList(char *FileNameIn)
 
 void showUsage(void)
 {
-    printf("TAPe UTility 1.0 by Sivvus\n");
+    printf("TAPe UTility v1.01 by Sivvus\n");
     printf("Usage: TAPUT command [options] FileIn [FileOut]\n");
     printf("commands:\n");
-    printf("    add           adds a file at the end of the \"tap\" image\n");
-    printf("    insert        inserts a file at the beginning of the image,\n");
-    printf("                  with the -b <n> option inserts a file before block <n>\n");
-    printf("    extract       extracts a block of data to a file\n");
-    printf("                  (requires an option -b <n>)\n");
-    printf("    remove        remove block of data from the image (requires -b <n>)\n");
-    printf("    list          list image content\n");
-    printf("    help          display this help and exit\n");
+    printf("    add             adds a file at the end of the \"tap\" image\n");
+    printf("    insert          inserts a file at the beginning of the image,\n");
+    printf("                    with the -s <n> option inserts a file before block <n>\n");
+    printf("                    if several blocks are selected, inserts the file before each block\n");
+    printf("    extract         extracts a block of data to a file\n");
+    printf("                    (requires an option -s <n>)\n");
+    printf("    remove          remove blocks of data from the image (requires -s <n>[,<n>]..)\n");
+    printf("                    up to 10 blocks can be selected\n");
+    printf("    list            list image content\n");
+    printf("    help            display this help and exit\n");
     printf("options:\n");
-    printf("    -o <addr>     implies creating a block header,\n");
-    printf("                  <addr> sets the origin address\n");
-    printf("    -n <name>     implies creating a block header,\n");
-    printf("                  <name> sets a block name\n");
-    printf("    -b <number>   sets the block number\n");
+    printf("    -o <addr>       implies creating a block header,\n");
+    printf("                    <addr> sets the origin address\n");
+    printf("    -n <name>       implies creating a block header,\n");
+    printf("                    <name> sets a block name\n");
+    printf("    -s <n>[,<n>]..  selects the block numbers (up to 10)\n");
     printf("\n");
 }
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     char FileNameIn[256] = "\0";
     char FileNameOut[256] = "\0";
     bool AllOk = true;
-
+    memset(&SelectedBlocks, 0, sizeof(SelectedBlocks));
+    
     for (int i = 1; i < argc && AllOk; i++)
     {
         if (argv[i][0] == '-')
@@ -405,6 +436,7 @@ int main(int argc, char** argv)
                     i++;
                     break;
                 case 'o':
+                    if ((i + 1) < argc)
                     {
                         int adr = atoi(argv[i + 1]);
                         if (adr > 0xffff || adr < 0)
@@ -417,10 +449,33 @@ int main(int argc, char** argv)
                         TapeHeader.HStartHi = (byte)(adr >> 8);
                         i++;
                     }
+                    else
+                        AllOk = false;
                     break;
-                case 'b':
-                    SelectedBlock = atoi(argv[i + 1]);
-                    i++;
+                case 's':
+                    if ((i + 1) < argc)
+                    {
+                        int tmp = 0;
+                        SelectedBlocks.Count++;
+                        for (char *Ptr = argv[i + 1]; *Ptr != '\0' && SelectedBlocks.Count < 11; Ptr++)
+                        {
+                            if (*Ptr >= '0' && *Ptr <= '9')
+                                tmp = tmp * 10 + (*Ptr - '0');
+                            if (*Ptr == ',' && tmp != 0)
+                            {
+                                SelectedBlocks.Block[SelectedBlocks.Count - 1] = tmp;
+                                tmp = 0;
+                                SelectedBlocks.Count++;
+                            }
+                        }
+                        if (tmp == 0)
+                            SelectedBlocks.Count--;
+                        else
+                            SelectedBlocks.Block[SelectedBlocks.Count - 1] = tmp;
+                        i++;
+                    }
+                    else
+                        AllOk = false;
                     break;
                 case 'q':
                     QuietMode = true;
