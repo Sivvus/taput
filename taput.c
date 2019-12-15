@@ -400,23 +400,23 @@ void cmdList(char *FileNameIn)
         {
             case 0x00:
                 Header = (struct tapeheader*)pos;
-                printf("#%-4.2d <HEAD>   %-8d %-6.4X", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
+                printf("#%d\t<HEAD>\t%5d\t%.6X\t", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
                 strncpy(blockname, Header->HName, 10);
                 blockname[10] = '\0';
                 switch (Header->HType)
                 {
-                    case 0:
-                        printf(" Program: %s LINE %d\n", blockname,
+                    case DT_BASIC:
+                        printf("Program: %s\tLINE %d\n", blockname,
                             Header->HStartLo | (Header->HStartHi << 8));
                         break;
-                    case 1:
-                        printf(" Number array: %s\n", blockname);
+                    case DT_NUMARRAY:
+                        printf("Number array: %s\n", blockname);
                         break;
-                    case 2:
-                        printf(" Character array: %s\n", blockname);
+                    case DT_CHARARRAY:
+                        printf("Character array: %s\n", blockname);
                         break;
-                    case 3:
-                        printf(" Bytes:   %s CODE %d,%d\n", blockname,
+                    case DT_CODE:
+                        printf("Bytes:   %s CODE %d,%d\n", blockname,
                             Header->HStartLo | (Header->HStartHi << 8),
                             Header->HLenLo | (Header->HLenHi << 8));
                         break;
@@ -426,9 +426,10 @@ void cmdList(char *FileNameIn)
                 }
                 break;
             case 0xff:
-                printf("#%-4.2d <DATA>   %-8d %-6.4X\n", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
+                printf("#%d\t<DATA>\t%5d\t%.6X\n", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
                 break;
             default:
+                printf("#%d\t<0x%.2X>\t%5d\t%.6X\n", i, (int)pos[2], (int)(blocksize - 2), (unsigned int)(pos - buffer));
                 break;
         }
         pos = pos + blocksize + 2;
