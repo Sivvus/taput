@@ -8,6 +8,12 @@
 #define MAX_SELECTED_BLOCKS 10
 #define MAX_PATH 260
 
+#define DT_BASIC     0
+#define DT_NUMARRAY  1
+#define DT_CHARARRAY 2
+#define DT_CODE      3
+
+
 typedef unsigned char byte;
 
 enum command
@@ -38,7 +44,7 @@ struct tapeheader
 } TapeHeader = { 
         19, 0, /* Len header */
         0, /* Flag header */
-        3, /* Code */
+        DT_CODE,  
         { 32, 32, 32, 32, 32, 32, 32, 32, 32, 32 }, 
         0, 0, /* Length of data block */
         0x00, 0x00, /* Param1 */
@@ -55,9 +61,9 @@ struct selectedblocks
 bool AddTapeHeader = false;
 bool QuietMode = false;
 
-void showUsage(void)
+void showUsage(void) 
 {
-    printf("TAPe UTility v1.01 by Sivvus\n");
+    printf("TAPe UTility v1.02 by Sivvus\n");
     printf("Usage: TAPUT command [options] FileIn [FileOut]\n");
     printf("commands:\n");
     printf("    add             adds a file at the end of the \"tap\" image\n");
@@ -71,8 +77,9 @@ void showUsage(void)
     printf("                    up to %d blocks can be selected\n", MAX_SELECTED_BLOCKS);
     printf("    list            list image content\n");
     printf("options:\n");
+    printf("    -b              creates a BASIC program header block\n");
     printf("    -o <addr>       implies creating a block header,\n");
-    printf("                    <addr> sets the origin address\n");
+    printf("                    <addr> sets the origin address or the BASIC autostart line number\n");
     printf("    -n <name>       implies creating a block header,\n");
     printf("                    <name> sets a block name\n");
     printf("    -s <n>[,<n>]..  selects the block numbers (up to %d)\n", MAX_SELECTED_BLOCKS);
@@ -86,6 +93,24 @@ byte crc(byte *start, int length)
     for (int i = 0; i < length; i++)
         tcrc = tcrc ^ start[i];
     return tcrc;
+}
+
+void PrepareTapeHeader(size_t size)
+{
+    switch (TapeHeader.HType)
+    {
+        case DT_BASIC:
+            TapeHeader.HParam2Lo = (byte)(size & 0xff);
+            TapeHeader.HParam2Hi = (byte)(size >> 8);
+            break;
+        case DT_CODE:   
+            TapeHeader.HParam2Lo = 0x00;
+            TapeHeader.HParam2Hi = 0x80;
+            break;
+    }
+    TapeHeader.HLenLo = (byte)(size & 0xff);
+    TapeHeader.HLenHi = (byte)(size >> 8);
+    TapeHeader.Parity1 = crc(&TapeHeader.Flag1, 18); 
 }
 
 void ChkOutFile(char *FileName)
@@ -172,20 +197,17 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
 
     if (AddTapeHeader)
     {
-       TapeHeader.HLenLo = (byte)(sizeIn & 0xff);
-       TapeHeader.HLenHi = (byte)(sizeIn >> 8);
-       TapeHeader.Parity1 = crc(&TapeHeader.Flag1, 18); 
-       fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
+        PrepareTapeHeader(sizeIn);
+        fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
     }
-    byte head[3];
-    head[0] = (sizeIn + 2) & 0xff;
-    head[1] = (sizeIn + 2) >> 8;
-    head[2] = 0xff;
-    fwrite(head, 3, 1, file);
+    byte Head[3];
+    Head[0] = (sizeIn + 2) & 0xff;
+    Head[1] = (sizeIn + 2) >> 8;
+    Head[2] = 0xff;
+    fwrite(Head, sizeof(Head), 1, file);
     fwrite(bufferIn, sizeIn, 1, file);
-    head[0] = crc(bufferIn, sizeIn);
-    head[0] = head[0] ^ 0xff;
-    fwrite(head, 1, 1, file);
+    byte Parity = crc(bufferIn, sizeIn) ^ Head[2];
+    fwrite(&Parity, sizeof(Parity), 1, file);
     
     free(bufferIn);
     fclose(file);
@@ -238,20 +260,17 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
         {
             if (AddTapeHeader)
             {
-               TapeHeader.HLenLo = (byte)(sizeIn & 0xff);
-               TapeHeader.HLenHi = (byte)(sizeIn >> 8);
-               TapeHeader.Parity1 = crc(&TapeHeader.Flag1, 18); 
-               fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
+                PrepareTapeHeader(sizeIn);
+                fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
             }
-            byte head[3];
-            head[0] = (sizeIn + 2) & 0xff;
-            head[1] = (sizeIn + 2) >> 8;
-            head[2] = 0xff;
-            fwrite(head, 3, 1, file);
+            byte Head[3];
+            Head[0] = (sizeIn + 2) & 0xff;
+            Head[1] = (sizeIn + 2) >> 8;
+            Head[2] = 0xff;
+            fwrite(Head, sizeof(Head), 1, file);
             fwrite(bufferIn, sizeIn, 1, file);
-            head[0] = crc(bufferIn, sizeIn);
-            head[0] = head[0] ^ 0xff;
-            fwrite(head, 1, 1, file);
+            byte Parity = crc(bufferIn, sizeIn) ^ Head[2];
+            fwrite(&Parity, sizeof(Parity), 1, file);
             isDone = true;
         }
         size_t blocksize = pos[0] | (pos[1] << 8);
@@ -429,6 +448,10 @@ int main(int argc, char **argv)
         if (argv[i][0] == '-')
             switch (tolower(argv[i][1]))
             {
+                case 'b':
+                    AddTapeHeader = true;
+                    TapeHeader.HType = DT_BASIC;
+                    break;
                 case 'n':
                     if ((i + 1) < argc)
                     {
@@ -461,6 +484,9 @@ int main(int argc, char **argv)
                     else
                         AllOk = false;
                     break;
+                case 'q':
+                    QuietMode = true;
+                    break;
                 case 's':
                     if ((i + 1) < argc)
                     {
@@ -486,9 +512,6 @@ int main(int argc, char **argv)
                     }
                     else
                         AllOk = false;
-                    break;
-                case 'q':
-                    QuietMode = true;
                     break;
                 case '-':
                     if (strcasecmp(&argv[i][2], "help") == 0)

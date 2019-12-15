@@ -18,8 +18,9 @@ commands:
                     up to 10 blocks can be selected
     list            list image content
 options:
+    -b              creates a BASIC program header block
     -o <addr>       implies creating a block header,
-                    <addr> sets the origin address
+                    <addr> sets the origin address or the BASIC autostart line number
     -n <name>       implies creating a block header,
                     <name> sets a block name
     -s <n>[,<n>]..  selects the block numbers (up to 10)
