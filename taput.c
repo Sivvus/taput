@@ -83,7 +83,7 @@ void showUsage(void)
     printf("    -n <name>       implies creating a block header,\n");
     printf("                    <name> sets a block name\n");
     printf("    -s <n>[,<n>]..  selects the block numbers (up to %d)\n", MAX_SELECTED_BLOCKS);
-    printf("    --help          display this help and exit\n");
+    printf("    -h, --help      display this help and exit\n");
     printf("\n");
 }
 
@@ -386,8 +386,6 @@ void cmdList(char *FileNameIn)
     byte *buffer;
     byte *endbuf;
     byte *pos;
-    char blockname[11];
-    struct tapeheader *Header;
     
     size_t size = LoadFile(&buffer, FileNameIn);
     
@@ -396,42 +394,57 @@ void cmdList(char *FileNameIn)
     for (int i = 1; pos < endbuf; i++)
     {
         size_t blocksize = pos[0] | (pos[1] << 8);
-        switch (pos[2])
+        if (!blocksize)
         {
-            case 0x00:
-                Header = (struct tapeheader*)pos;
-                printf("#%d\t<HEAD>\t%5d\t%.6X\t", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
-                strncpy(blockname, Header->HName, 10);
-                blockname[10] = '\0';
-                switch (Header->HType)
-                {
-                    case DT_BASIC:
-                        printf("Program: %s\tLINE %d\n", blockname,
-                            Header->HStartLo | (Header->HStartHi << 8));
-                        break;
-                    case DT_NUMARRAY:
-                        printf("Number array: %s\n", blockname);
-                        break;
-                    case DT_CHARARRAY:
-                        printf("Character array: %s\n", blockname);
-                        break;
-                    case DT_CODE:
-                        printf("Bytes:   %s CODE %d,%d\n", blockname,
-                            Header->HStartLo | (Header->HStartHi << 8),
-                            Header->HLenLo | (Header->HLenHi << 8));
-                        break;
-                    default:
-                        printf("Unknown data type\n");
-                        break;
-                }
-                break;
-            case 0xff:
-                printf("#%d\t<DATA>\t%5d\t%.6X\n", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
-                break;
-            default:
-                printf("#%d\t<0x%.2X>\t%5d\t%.6X\n", i, (int)pos[2], (int)(blocksize - 2), (unsigned int)(pos - buffer));
-                break;
+            printf("#%d\t<0x00>\t%5d\t%.6X\tBLOCK CORRUPTED\n", i, (int)(blocksize), (unsigned int)(pos - buffer));
+            pos = pos + 2;
+            continue;
         }
+        else if (pos[2] == 0x00 && blocksize == 19)
+        {
+            struct tapeheader *Header = (struct tapeheader*)pos;
+            char blockname[11];
+            for (int j = 0; j < 10; j++)
+                if (isprint(Header->HName[j]))
+                    blockname[j] = Header->HName[j];
+                else
+                    blockname[j] = '?';
+            blockname[10] = '\0';
+            int startadr = Header->HStartLo | (Header->HStartHi << 8);
+            int length = Header->HLenLo | (Header->HLenHi << 8);
+            int basic = Header->HParam2Lo | (Header->HParam2Hi << 8);
+            int variab = length - basic;
+            printf("#%d\t<HEAD>\t%5d\t%.6X\t", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
+            switch (Header->HType)
+            {
+                case DT_BASIC:
+                    printf("Program: %s\t", blockname);
+                    if (startadr != 0x8000)
+                        printf("LINE %d,", startadr);
+                    printf("%d", length);
+                    if (variab > 0)
+                        printf("(B:%d,V:%d)\n", basic, variab);
+                    else
+                        printf("\n");
+                    break;
+                case DT_NUMARRAY:
+                    printf("Number array: %s\n", blockname);
+                    break;
+                case DT_CHARARRAY:
+                    printf("Character array: %s\n", blockname);
+                    break;
+                case DT_CODE:
+                    printf("Bytes:   %s\tCODE %d,%d\n", blockname, startadr, length);
+                    break;
+                default:
+                    printf("Unknown data type [0x%.2X]\n", Header->HType);
+                    break;
+            }
+        }
+        else if (pos[2] == 0xff)
+            printf("#%d\t<DATA>\t%5d\t%.6X\n", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
+        else
+            printf("#%d\t<0x%.2X>\t%5d\t%.6X\n", i, (int)pos[2], (int)(blocksize - 2), (unsigned int)(pos - buffer));
         pos = pos + blocksize + 2;
     }
     free(buffer);
@@ -452,6 +465,10 @@ int main(int argc, char **argv)
                 case 'b':
                     AddTapeHeader = true;
                     TapeHeader.HType = DT_BASIC;
+                    break;
+                case 'h':
+                    showUsage();
+                    return 0;
                     break;
                 case 'n':
                     if ((i + 1) < argc)
