@@ -7,12 +7,16 @@
 
 #define MAX_SELECTED_BLOCKS 10
 #define MAX_PATH 260
+#define APP_VERSION "1.03"
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+#define MAX_SELECTED_BLOCKS_S STR(MAX_SELECTED_BLOCKS)
 
 #define DT_BASIC     0
 #define DT_NUMARRAY  1
 #define DT_CHARARRAY 2
 #define DT_CODE      3
-
 
 typedef unsigned char byte;
 
@@ -51,11 +55,17 @@ struct tapeheader
         0x00, 0x80, /* Param2 */
         0, /* Parity header */
     };
+    
+struct blockrange
+{
+    int start;
+    int end;
+};
 
 struct selectedblocks
 {
-    int Count;
-    int Block[MAX_SELECTED_BLOCKS];
+    int count;
+    struct blockrange block[MAX_SELECTED_BLOCKS];
 } SelectedBlocks;
     
 bool AddTapeHeader = false;
@@ -63,28 +73,32 @@ bool QuietMode = false;
 
 void showUsage(void) 
 {
-    printf("TAPe UTility v1.02 by Sivvus\n");
-    printf("Usage: TAPUT command [options] FileIn [FileOut]\n");
-    printf("commands:\n");
-    printf("    add             adds a file at the end of the \"tap\" image\n");
-    printf("                    if the image does not exist, it will be created\n");
-    printf("    insert          inserts a file at the beginning of the image,\n");
-    printf("                    with the -s <n> option inserts a file before block <n>\n");
-    printf("                    if several blocks are selected, inserts the file before each block\n");
-    printf("    extract         extracts a block of data to a file\n");
-    printf("                    (requires an option -s <n>)\n");
-    printf("    remove          remove blocks of data from the image (requires -s <n>[,<n>]..)\n");
-    printf("                    up to %d blocks can be selected\n", MAX_SELECTED_BLOCKS);
-    printf("    list            list image content\n");
-    printf("options:\n");
-    printf("    -b              creates a BASIC program header block\n");
-    printf("    -o <addr>       implies creating a block header,\n");
-    printf("                    <addr> sets the origin address or the BASIC autostart line number\n");
-    printf("    -n <name>       implies creating a block header,\n");
-    printf("                    <name> sets a block name\n");
-    printf("    -s <n>[,<n>]..  selects the block numbers (up to %d)\n", MAX_SELECTED_BLOCKS);
-    printf("    -h, --help      display this help and exit\n");
-    printf("\n");
+    printf("TAPe UTility " APP_VERSION " by Sivvus\n"
+           "Usage: TAPUT command [options] FileIn [FileOut]\n"
+           "    taput add -o 32768 -n BlockName file.bin image.tap\n"
+           "    taput insert -s 3 -o 32768 -n BlockName file.bin image.tap\n"
+           "    taput extract -s 2 image.tap file.bin\n"
+           "    taput remove -s 1-4,8,12 image.tap\n"
+           "    taput list image.tap\n"
+           "Commands:\n"
+           "    add              Adds a file at the end of the \"tap\" image\n"
+           "                     if the image does not exist, it will be created\n"
+           "    insert           Inserts a file at the beginning of the image,\n"
+           "                     with the -s <n> option inserts a file before block <n>\n"
+           "    extract          Extracts a block of data to a file\n"
+           "                     (requires an option -s <n>)\n"
+           "    remove           Remove blocks of data from the image (requires -s (<n>|<n>-<m>))\n"
+           "                     up to " MAX_SELECTED_BLOCKS_S " blocks can be selected\n"
+           "    list             List image content\n"
+           "Options:\n"
+           "    -b               Creates a BASIC program header block\n"
+           "    -o <addr>        Implies creating a block header,\n"
+           "                     <addr> sets the origin address or the BASIC autostart line number\n"
+           "    -n <name>        Implies creating a block header,\n"
+           "                     <name> sets a block name\n"
+           "    -s (<n>|<n>-<m>)[,(<n>|<n>-<m>)]..\n"
+           "                     Selects the block numbers and/or block ranges (up to " MAX_SELECTED_BLOCKS_S ")\n"
+           "    -h, --help       Display this help and exit\n");
 }
 
 byte crc(byte *start, int length)
@@ -149,8 +163,12 @@ size_t LoadFile(byte **Dest, char *FileName)
 
 bool isSelected(int BlockNo)
 {
-    for (int i = 0; i < SelectedBlocks.Count; i++)
-        if (BlockNo == SelectedBlocks.Block[i])
+    for (int i = 0; i < SelectedBlocks.count; i++)
+        if (    
+                SelectedBlocks.block[i].start <= SelectedBlocks.block[i].end &&
+                BlockNo >= SelectedBlocks.block[i].start && 
+                BlockNo <= SelectedBlocks.block[i].end
+            )
             return true;
     return false;
 }
@@ -215,11 +233,25 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
 
 void cmdInsert(char *FileNameIn, char *FileNameOut)
 {
-    if (SelectedBlocks.Count == 0)
+    if (SelectedBlocks.count == 0)
     {
-        SelectedBlocks.Count = 1;
-        SelectedBlocks.Block[0] = 1;        
+        SelectedBlocks.count = 1;
+        SelectedBlocks.block[0].start = 1;        
+        SelectedBlocks.block[0].end = 1;        
     }
+    
+    if (SelectedBlocks.count != 1)
+    {
+        fprintf(stderr, "No block selected\n");
+        exit(1);
+    }
+    
+    if (SelectedBlocks.block[0].start != SelectedBlocks.block[0].end)
+    {
+        fprintf(stderr, "Not allowed to use block range in this command\n");
+        exit(1);
+    }
+    
     bool isDone = false;
     byte *bufferOut, *bufferIn, *pos, *endbuf;
 
@@ -290,9 +322,15 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
 
 void cmdExtract(char *FileNameIn, char *FileNameOut)
 {
-    if (SelectedBlocks.Count == 0)
+    if (SelectedBlocks.count != 1)
     {
         fprintf(stderr, "No block selected\n");
+        exit(1);
+    }
+    
+    if (SelectedBlocks.block[0].start != SelectedBlocks.block[0].end)
+    {
+        fprintf(stderr, "Not allowed to use block range in this command\n");
         exit(1);
     }
     
@@ -310,7 +348,7 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
     for (int i = 1; pos < endbuf; i++)
     {
         size_t blocksize = pos[0] | (pos[1] << 8);
-        if (i == SelectedBlocks.Block[0])
+        if (isSelected(i))
         {
           FILE *file;
           file = fopen(FileNameOut, "wb");
@@ -337,7 +375,7 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
 
 void cmdRemove(char *FileName)
 {
-    if (SelectedBlocks.Count == 0)
+    if (SelectedBlocks.count == 0)
     {
         fprintf(stderr, "No block selected\n");
         exit(1);
@@ -509,23 +547,34 @@ int main(int argc, char **argv)
                     if ((i + 1) < argc)
                     {
                         int tmp = 0;
-                        SelectedBlocks.Count++;
-                        for (char *c = argv[i + 1]; *c != '\0' && SelectedBlocks.Count <= MAX_SELECTED_BLOCKS; c++)
+                        SelectedBlocks.count++;
+                        for (char *c = argv[i + 1]; *c != '\0' && SelectedBlocks.count <= MAX_SELECTED_BLOCKS; c++)
                         {
                             if (*c >= '0' && *c <= '9')
                                 tmp = tmp * 10 + (*c - '0');
+                            else if (*c == '-' && tmp != 0)
+                            {
+                                SelectedBlocks.block[SelectedBlocks.count - 1].start = tmp;
+                                tmp = 0;
+                            }
                             else if (*c == ',' && tmp != 0)
                             {
-                                SelectedBlocks.Block[SelectedBlocks.Count - 1] = tmp;
+                                if (SelectedBlocks.block[SelectedBlocks.count - 1].start == 0)
+                                    SelectedBlocks.block[SelectedBlocks.count - 1].start = tmp;
+                                SelectedBlocks.block[SelectedBlocks.count - 1].end = tmp;
                                 tmp = 0;
-                                SelectedBlocks.Count++;
+                                SelectedBlocks.count++;
                             }
                             else break;
                         }
                         if (tmp == 0)
-                            SelectedBlocks.Count--;
+                            SelectedBlocks.count--;
                         else
-                            SelectedBlocks.Block[SelectedBlocks.Count - 1] = tmp;
+                        {
+                            if (SelectedBlocks.block[SelectedBlocks.count - 1].start == 0)
+                                SelectedBlocks.block[SelectedBlocks.count - 1].start = tmp;
+                            SelectedBlocks.block[SelectedBlocks.count - 1].end = tmp;
+                        }
                         i++;
                     }
                     else
