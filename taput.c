@@ -7,7 +7,7 @@
 
 #define MAX_SELECTED_BLOCKS 10
 #define MAX_PATH 260
-#define APP_VERSION "1.03"
+#define APP_VERSION "1.04"
 
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
@@ -27,7 +27,8 @@ enum command
     cm_Insert,
     cm_Extract,
     cm_List,
-    cm_Remove
+    cm_Remove,
+    cm_Fix
 } Command
     = cm_Unknown;
 
@@ -73,32 +74,36 @@ bool QuietMode = false;
 
 void showUsage(void) 
 {
-    printf("TAPe UTility " APP_VERSION " by Sivvus\n"
-           "Usage: TAPUT command [options] FileIn [FileOut]\n"
-           "    taput add -o 32768 -n BlockName file.bin image.tap\n"
-           "    taput insert -s 3 -o 32768 -n BlockName file.bin image.tap\n"
-           "    taput extract -s 2 image.tap file.bin\n"
-           "    taput remove -s 1-4,8,12 image.tap\n"
-           "    taput list image.tap\n"
-           "Commands:\n"
-           "    add              Adds a file at the end of the \"tap\" image\n"
-           "                     if the image does not exist, it will be created\n"
-           "    insert           Inserts a file at the beginning of the image,\n"
-           "                     with the -s <n> option inserts a file before block <n>\n"
-           "    extract          Extracts a block of data to a file\n"
-           "                     (requires an option -s <n>)\n"
-           "    remove           Remove blocks of data from the image (requires -s (<n>|<n>-<m>))\n"
-           "                     up to " MAX_SELECTED_BLOCKS_S " blocks can be selected\n"
-           "    list             List image content\n"
-           "Options:\n"
-           "    -b               Creates a BASIC program header block\n"
-           "    -o <addr>        Implies creating a block header,\n"
-           "                     <addr> sets the origin address or the BASIC autostart line number\n"
-           "    -n <name>        Implies creating a block header,\n"
-           "                     <name> sets a block name\n"
-           "    -s (<n>|<n>-<m>)[,(<n>|<n>-<m>)]..\n"
-           "                     Selects the block numbers and/or block ranges (up to " MAX_SELECTED_BLOCKS_S ")\n"
-           "    -h, --help       Display this help and exit\n");
+    puts("TAPe UTility " APP_VERSION " by Sivvus\n"
+         "Usage: TAPUT command [options] FileIn [FileOut]\n"
+         "Commands:\n"
+         "    add              Add a file at the end of the \"tap\" image\n"
+         "                     if the image does not exist, it will be created\n"
+         "    insert           Insert a file at the beginning of the image,\n"
+         "                     with the -s <n> option inserts a file before block n\n"
+         "    extract          Extract a block of data to a file\n"
+         "                     (requires an option -s <n>)\n"
+         "    remove           Remove blocks of data from the image (requires -s (<n>|<n>-<m>))\n"
+         "                     up to " MAX_SELECTED_BLOCKS_S " blocks can be selected\n"
+         "    fix              Remove blocks with zero size from the image\n"
+         "    list             List image content\n"
+         "Options:\n"
+         "    -b               Creates a BASIC program header block\n"
+         "    -o <addr>        Implies creating a block header,\n"
+         "                     <addr> sets the origin address or the BASIC autostart line number\n"
+         "    -n <name>        Implies creating a block header,\n"
+         "                     <name> sets a block name\n"
+         "    -s (<n>|<n>-<m>)[,(<n>|<n>-<m>)]..\n"
+         "                     Selects the block numbers and/or block ranges (up to " MAX_SELECTED_BLOCKS_S ")\n"
+         "    -h, --help       Display this help and exit\n"
+         "Examples:\n"
+         "    taput add -o 32768 -n BlockName file.bin image.tap\n"
+         "    taput insert -s 3 -o 32768 -n BlockName file.bin image.tap\n"
+         "    taput extract -s 2 image.tap file.bin\n"
+         "    taput remove -s 1-4,8,12 image.tap\n"
+         "    taput fix image.tap\n"
+         "    taput list image.tap\n"
+    );
 }
 
 byte crc(byte *start, int length)
@@ -419,6 +424,47 @@ void cmdRemove(char *FileName)
     }
 }
 
+void cmdFix(char *FileName)
+{
+    bool isDone = false;
+    byte *buffer, *pos, *endbuf;
+    size_t size = LoadFile(&buffer, FileName);
+    if (size == 0)
+    {
+        fprintf(stderr, "Unable to open file \"%s\"\n", FileName);
+        exit(1);
+    }
+    endbuf = buffer + size;
+    pos = buffer;
+    FILE *file;
+    file = fopen(FileName, "wb");
+    if (!file)
+    {
+        fprintf(stderr, "Unable to create file \"%s\"\n", FileName);
+        free(buffer);
+        exit(1);              
+    }
+    for (int i = 1; pos < endbuf; i++)
+    {       
+        size_t blocksize = pos[0] | (pos[1] << 8);
+        if (blocksize)
+        {
+            fwrite(pos, blocksize + 2, 1, file);
+        } 
+        else
+            isDone = true;
+        pos = pos + blocksize + 2;        
+    }
+    fclose(file);
+    free(buffer);
+
+    if (!isDone)
+    {
+        fprintf(stderr, "No zero size blocks found\n");
+        exit(1);
+    }
+}
+
 void cmdList(char *FileNameIn)
 {
     byte *buffer;
@@ -592,14 +638,16 @@ int main(int argc, char **argv)
         {
             if (strcasecmp(argv[i], "add") == 0)
                 Command = cm_Add;
-            if (strcasecmp(argv[i], "insert") == 0)
+            else if (strcasecmp(argv[i], "insert") == 0)
                 Command = cm_Insert;
-            if (strcasecmp(argv[i], "extract") == 0)
+            else if (strcasecmp(argv[i], "extract") == 0)
                 Command = cm_Extract;
-            if (strcasecmp(argv[i], "list") == 0)
+            else if (strcasecmp(argv[i], "list") == 0)
                 Command = cm_List;
-            if (strcasecmp(argv[i], "remove") == 0)
+            else if (strcasecmp(argv[i], "remove") == 0)
                 Command = cm_Remove;
+            else if (strcasecmp(argv[i], "fix") == 0)
+                Command = cm_Fix;
         }
         else if (FileNameIn[0] == '\0')
             strncpy(FileNameIn, argv[i], MAX_PATH);
@@ -647,6 +695,9 @@ int main(int argc, char **argv)
             break;
         case cm_List:
             cmdList(FileNameIn);
+            break;
+        case cm_Fix:
+            cmdFix(FileNameIn);
             break;
         default:
             break;
