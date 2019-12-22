@@ -1,15 +1,19 @@
-DESC=TAPe UTility 1.0
+#~~~~   SETTINGS   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 CC=gcc
 CFLAGS=-Os -Wall -Wextra
-LDFLAGS=-s -fmerge-all-constants -fno-ident -ffunction-sections -fdata-sections -Wl,--gc-sections -Wl,--build-id=none -static-libgcc
+LDFLAGS=-s -fmerge-all-constants -fno-ident -ffunction-sections \
+        -fdata-sections -Wl,--gc-sections -Wl,--build-id=none -static-libgcc
 OUT=taput
 OBJ=taput.o
-
+CLN=rm -f
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 ifeq ($(OS),Windows_NT)
 	OUT:=$(OUT).exe
+	CLN:=del /Q
 endif
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
-.PHONY: all clean test install
+.PHONY: all clean
 
 all: $(OUT)
 
@@ -23,4 +27,5 @@ $(OUT): $(OBJ)
 	
 clean:
 	$(info Cleaning ..)
-	-rm -f $(OUT) $(OBJ)
+	$(CLN) $(OUT)
+	$(CLN) $(OBJ)

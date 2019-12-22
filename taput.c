@@ -7,7 +7,7 @@
 
 #define MAX_SELECTED_BLOCKS 10
 #define MAX_PATH 260
-#define APP_VERSION "1.04"
+#define APP_VERSION "1.05"
 
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
@@ -470,7 +470,6 @@ void cmdList(char *FileNameIn)
     byte *buffer;
     byte *endbuf;
     byte *pos;
-    
     size_t size = LoadFile(&buffer, FileNameIn);
     
     endbuf = buffer + size;
@@ -478,10 +477,46 @@ void cmdList(char *FileNameIn)
     for (int i = 1; pos < endbuf; i++)
     {
         size_t blocksize = pos[0] | (pos[1] << 8);
+        int datasize = blocksize - 2;
+        if (datasize < 0)
+            datasize = 0;
+        // check crc
+        char crcStr[8];
+        int crcCalc = crc(&pos[2], datasize + 1);
+        if (pos[blocksize + 1] == crcCalc) 
+            sprintf(crcStr, "%.2X",crcCalc);
+        else
+            sprintf(crcStr, "%.2X(%.2X)", (int)pos[blocksize + 1], crcCalc);
+        // blocktype
+        char typeStr[7];
+        switch (pos[2])
+        {
+            case 0x00:
+                if (blocksize == 19)
+                    strcpy(typeStr, "<HEAD>");
+                else
+                    sprintf(typeStr, "<0x%.2X>", (int)pos[2]);
+                break;
+            case 0xff:
+                strcpy(typeStr, "<DATA>");
+                break;
+            default:
+                sprintf(typeStr, "<0x%.2X>", (int)pos[2]);
+                break;
+        };
+        // zero lenght block
+        if (!datasize)
+        {
+            strcpy(crcStr, "--");
+            strcpy(typeStr, "<---->");
+        }
+        
+        printf("#%d\t%s\t%5d\t%s\t%.6X\t", i, typeStr, datasize, crcStr, (unsigned int)(pos - buffer));
+        
         if (!blocksize)
         {
-            printf("#%d\t<0x00>\t%5d\t%.6X\tBLOCK CORRUPTED\n", i, (int)(blocksize), (unsigned int)(pos - buffer));
-            pos = pos + 2;
+            puts("zero-length block");
+            pos += 2;
             continue;
         }
         else if (pos[2] == 0x00 && blocksize == 19)
@@ -498,7 +533,6 @@ void cmdList(char *FileNameIn)
             int length = Header->HLenLo | (Header->HLenHi << 8);
             int basic = Header->HParam2Lo | (Header->HParam2Hi << 8);
             int variab = length - basic;
-            printf("#%d\t<HEAD>\t%5d\t%.6X\t", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
             switch (Header->HType)
             {
                 case DT_BASIC:
@@ -525,13 +559,10 @@ void cmdList(char *FileNameIn)
                     break;
             }
         }
-        else if (pos[2] == 0xff)
-            printf("#%d\t<DATA>\t%5d\t%.6X\n", i, (int)(blocksize - 2), (unsigned int)(pos - buffer));
         else
-            printf("#%d\t<0x%.2X>\t%5d\t%.6X\n", i, (int)pos[2], (int)(blocksize - 2), (unsigned int)(pos - buffer));
-        pos = pos + blocksize + 2;
+            puts("");
+        pos += blocksize + 2;
     }
-    free(buffer);
 }
 
 int main(int argc, char **argv)
