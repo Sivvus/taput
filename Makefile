@@ -1,6 +1,6 @@
 #~~~~   SETTINGS   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 CC=gcc
-CFLAGS=-Os -Wall -Wextra
+CFLAGS=-O3 -Wall -Wextra
 LDFLAGS=-s -fmerge-all-constants -fno-ident -ffunction-sections \
         -fdata-sections -Wl,--gc-sections -Wl,--build-id=none -static-libgcc
 OUT=taput

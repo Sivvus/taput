@@ -21,6 +21,8 @@
 
 typedef unsigned char byte;
 
+//~~~~ Global variables ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
+
 enum command
 {
     cm_Unknown,
@@ -105,11 +107,11 @@ void showUsage(void)
     "    -s (<n>|<n>-<m>)[,(<n>|<n>-<m>)]..\n"
     "                     Selects the block numbers and/or block ranges (up to " MAX_SELECTED_BLOCKS_S ")\n"
     "Examples:\n"
-    "    taput add -o 32768 -n BlockName file.bin image.tap\n"
+    "    taput add -o 32768 -n \"Block name\" file.bin image.tap\n"
     "    taput extract -s 2 image.tap file.bin\n"
     "    taput fix-0 image.tap\n"
     "    taput fix-crc -s 3 image.tap\n"
-    "    taput insert -s 3 -o 32768 -n BlockName file.bin image.tap\n"
+    "    taput insert -s 3 -o 32768 -n \"Block name\" file.bin image.tap\n"
     "    taput list image.tap\n"
     "    taput remove -s 1-4,8,12 image.tap\n"
     "    taput replace -s 2 file.bin image.tap"
@@ -180,11 +182,17 @@ byte *LoadFile(size_t *size, const char *FileName)
     byte *Dest = (byte*)malloc(*size + 1);
     if (!Dest)
     {
-        fprintf(stderr, "Out of memory\n");
+        fprintf(stderr, "Memory allocation error\n");
         fclose(file);
         exit(1);
     }
-    fread(Dest, *size, 1, file);
+    if (*size)
+        if (!fread(Dest, *size, 1, file))
+        {
+            *size = 0;
+            free(Dest);
+            Dest = NULL;
+        }
     fclose(file);
 
     return Dest;
@@ -248,7 +256,7 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
             if ((pos + blocksize + 1) < endbuf)
                 fwrite(pos, blocksize + 2, 1, file);
             else
-            {
+           {
                 fwrite(pos, endbuf - pos, 1, file);
                 fclose(file);
                 free(bufferOut);
@@ -301,21 +309,14 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
         SelectedBlocks.block[0].start = 1;
         SelectedBlocks.block[0].end = 1;
     }
-
-    if (SelectedBlocks.count != 1)
+    if (SelectedBlocks.count > 1 || SelectedBlocks.block[0].start != SelectedBlocks.block[0].end)
     {
-        fprintf(stderr, "No block selected\n");
+        fprintf(stderr, "Exactly one block should be selected\n");
         exit(1);
     }
-
-    if (SelectedBlocks.block[0].start != SelectedBlocks.block[0].end)
-    {
-        fprintf(stderr, "Not allowed to use block range in this command\n");
-        exit(1);
-    }
-
     bool isDone = false;
-
+    
+    // Load and check input file
     size_t sizeIn;
     byte *bufferIn = LoadFile(&sizeIn, FileNameIn);
     if (!bufferIn)
@@ -330,6 +331,7 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
         exit(1);
     }
 
+    // Load output file
     size_t sizeOut;
     byte *bufferOut = LoadFile(&sizeOut, FileNameOut);
     if (!bufferOut)
@@ -366,9 +368,7 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
                 Head[1] = sizeIn >> 8;
                 fwrite(Head, 2, 1, file);
                 fwrite(bufferIn, sizeIn, 1, file);
-            }
-            else
-            {
+            } else {
                 Head[0] = (sizeIn + 2) & 0xff;
                 Head[1] = (sizeIn + 2) >> 8;
                 Head[2] = 0xff;
@@ -392,7 +392,7 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
 
     if (!isDone)
     {
-        fprintf(stderr, "Selected blocks were not found\n");
+        fprintf(stderr, "Selected block was not found\n");
         exit(1);
     }
 }
@@ -403,7 +403,7 @@ void cmdReplace(char *FileNameIn, char *FileNameOut)
 {
     if (SelectedBlocks.count != 1)
     {
-        fprintf(stderr, "No block selected\n");
+        fprintf(stderr, "Exactly one block or range of blocks should be selected\n");
         exit(1);
     }
 
@@ -462,9 +462,7 @@ void cmdReplace(char *FileNameIn, char *FileNameOut)
                     Head[1] = sizeIn >> 8;
                     fwrite(Head, 2, 1, file);
                     fwrite(bufferIn, sizeIn, 1, file);
-                }
-                else
-                {
+                } else {
                     Head[0] = (sizeIn + 2) & 0xff;
                     Head[1] = (sizeIn + 2) >> 8;
                     Head[2] = 0xff;
@@ -501,15 +499,9 @@ void cmdReplace(char *FileNameIn, char *FileNameOut)
 
 void cmdExtract(char *FileNameIn, char *FileNameOut)
 {
-    if (SelectedBlocks.count != 1)
+    if (SelectedBlocks.count != 1 || SelectedBlocks.block[0].start != SelectedBlocks.block[0].end)
     {
-        fprintf(stderr, "No block selected\n");
-        exit(1);
-    }
-
-    if (SelectedBlocks.block[0].start != SelectedBlocks.block[0].end)
-    {
-        fprintf(stderr, "Not allowed to use block range in this command\n");
+        fprintf(stderr, "Exactly one block should be selected\n");
         exit(1);
     }
 
@@ -540,21 +532,19 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
             }
             if (RawData)
             {
-                    int len = endbuf - pos - 2;
-                    if (len >= (int)blocksize)
-                        len = blocksize;
-                    else
-                        isComplete = false;
-                    fwrite(pos + 2, len, 1 , file);
-            }
-            else
-            {
-                    int len = endbuf - pos - 3;
-                    if (len >= (int)(blocksize - 2))
-                        len = blocksize - 2;
-                    else
-                        isComplete = false;
-                    fwrite(pos + 3, len, 1 , file);
+                int len = endbuf - pos - 2;
+                if (len >= (int)blocksize)
+                    len = blocksize;
+                else
+                    isComplete = false;
+                fwrite(pos + 2, len, 1 , file);
+            } else {
+                int len = endbuf - pos - 3;
+                if (len >= (int)(blocksize - 2))
+                    len = blocksize - 2;
+                else
+                    isComplete = false;
+                fwrite(pos + 3, len, 1 , file);
             }
             fclose(file);
             isDone = true;
@@ -660,8 +650,7 @@ void cmdFix0(char *FileName)
 
             if ((pos + blocksize + 1) < endbuf)
                 fwrite(pos, blocksize + 2, 1, file);
-            else
-            {
+            else {
                 fwrite(pos, endbuf - pos, 1, file);
                 byte fill = 0;
                 for (int cnt = (blocksize + 2)-(endbuf - pos); cnt > 0; cnt--)
@@ -722,11 +711,9 @@ void cmdFixCrc(char *FileName)
                     isDone = true;
                 }
                 fwrite(pos, blocksize + 2, 1, file);
-            }
-            else
-            {
+            } else 
                 fwrite(pos, endbuf - pos, 1, file);
-            }
+            
         pos += blocksize + 2;
     }
     fclose(file);
@@ -766,8 +753,7 @@ void cmdList(char *FileNameIn)
                 sprintf(crcStr, "<%.2X>",crcCalc);
             else
                 sprintf(crcStr, "<%.2X:%.2X>", (int)pos[blocksize + 1], crcCalc);
-        }
-        else
+        } else
             strcpy(crcStr,"<-->");
         // blocktype
         char typeStr[7];
@@ -788,12 +774,11 @@ void cmdList(char *FileNameIn)
                     sprintf(typeStr, "<0x%.2X>", (int)pos[2]);
                     break;
             };
-        }
-        else
+        } else
             strcpy(typeStr, "<---->");
 
         printf("#%d\t%s\t%5d\t%s\t%.6X\t", i, typeStr, datasize, crcStr,
-               (unsigned int)(pos - buffer));
+            (unsigned int)(pos - buffer));
 
         if (!blocksize)
         {
@@ -861,6 +846,7 @@ int main(int argc, char **argv)
     bool AllOk = true;
     memset(&SelectedBlocks, 0, sizeof(SelectedBlocks));
 
+    // parsing command-line arguments
     for (int i = 1; i < argc && AllOk; i++)
     {
         if (argv[i][0] == '-')
@@ -877,17 +863,14 @@ int main(int argc, char **argv)
                 case 'n':
                     if ((i + 1) < argc)
                     {
-                        if (strlen(argv[i + 1]) > 10)
-                        {
-                            fprintf(stderr, "Blockname too long \"%s\"", argv[i + 1]);
-                            AllOk = false;
-                        }
                         AddTapeHeader = true;
-                        strncpy(TapeHeader.HName, argv[i + 1], strlen(argv[i + 1]));
                         i++;
-                    }
-                    else
+                        for(int j = 0; argv[i][j] != '\0' && j < 10; j++)
+                            TapeHeader.HName[j] = argv[i][j];
+                    } else {
+                        fprintf(stderr, "Missing parameter");
                         AllOk = false;
+                    }
                     break;
                 case 'o':
                     if ((i + 1) < argc)
@@ -902,9 +885,10 @@ int main(int argc, char **argv)
                         TapeHeader.HStartLo = (byte)(adr & 0xff);
                         TapeHeader.HStartHi = (byte)(adr >> 8);
                         i++;
-                    }
-                    else
+                    } else {
+                        fprintf(stderr, "Missing parameter");
                         AllOk = false;
+                    }
                     break;
                 case 'q':
                     QuietMode = true;
@@ -947,10 +931,8 @@ int main(int argc, char **argv)
                             SelectedBlocks.block[SelectedBlocks.count - 1].end = tmp;
                         }
                         i++;
-                    }
-                    else
-                    {
-                        fprintf(stderr,"Missing parameter");
+                    } else {
+                        fprintf(stderr, "Missing parameter");
                         AllOk = false;
                     }
                     break;
@@ -962,14 +944,13 @@ int main(int argc, char **argv)
                     }
                     else if (strcasecmp(&argv[i][2], "raw") == 0)
                         RawData = true;
-                    else
-                    {
-                        fprintf(stderr,"Unknown option");
+                    else {
+                        fprintf(stderr, "Unknown option");
                         AllOk = false;
                     }
                     break;
                 default:
-                    fprintf(stderr,"Unknown option");
+                    fprintf(stderr, "Unknown option");
                     AllOk = false;
                     break;
             }
