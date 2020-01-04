@@ -30,11 +30,11 @@ Options:
     -s (<n>|<n>-<m>)[,(<n>|<n>-<m>)]..
                      Selects the block numbers and/or block ranges (up to 10)
 Examples:
-    taput add -o 32768 -n BlockName file.bin image.tap
+    taput add -o 32768 -n "block name" file.bin image.tap
     taput extract -s 2 image.tap file.bin
     taput fix-0 image.tap
     taput fix-crc -s 3 image.tap
-    taput insert -s 3 -o 32768 -n BlockName file.bin image.tap
+    taput insert -s 3 -o 32768 -n "block name" file.bin image.tap
     taput list image.tap
     taput remove -s 1-4,8,12 image.tap
     taput replace -s 2 file.bin image.tap

@@ -153,13 +153,25 @@ void PrepareTapeHeader(int size)
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void ChkOutFile(char *FileName)
+void chkOutFile(char *FileName)
 {
     if (FileName[0] == '\0')
     {
         fprintf(stderr, "No output file name was given\n");
         exit(1);
     }
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
+
+void writeBlock(void *start, size_t size, FILE *file, const char *fileName)
+{
+    if (!fwrite(start, size, 1, file))
+    {
+        fprintf(stderr, "Unable to write file \"%s\"\n", fileName);
+        fclose(file);
+        exit(1);
+    }    
 }
 
 //~~~~ LoadFile ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
@@ -254,10 +266,10 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
             size_t blocksize = pos[0] | (pos[1] << 8);
 
             if ((pos + blocksize + 1) < endbuf)
-                fwrite(pos, blocksize + 2, 1, file);
+                writeBlock(pos, blocksize + 2, file, FileNameOut);
             else
            {
-                fwrite(pos, endbuf - pos, 1, file);
+                writeBlock(pos, endbuf - pos, file, FileNameOut);
                 fclose(file);
                 free(bufferOut);
                 free(bufferIn);
@@ -275,25 +287,25 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
     if (AddTapeHeader)
     {
         PrepareTapeHeader(sizeIn);
-        fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
+        writeBlock(&TapeHeader, sizeof(TapeHeader), file, FileNameOut);
     }
     byte Head[3];
     if (RawData)
     {
         Head[0] = sizeIn & 0xff;
         Head[1] = sizeIn >> 8;
-        fwrite(Head, 2, 1, file);
-        fwrite(bufferIn, sizeIn, 1, file);
+        writeBlock(Head, 2, file, FileNameOut);
+        writeBlock(bufferIn, sizeIn, file, FileNameOut);
     }
     else
     {
         Head[0] = (sizeIn + 2) & 0xff;
         Head[1] = (sizeIn + 2) >> 8;
         Head[2] = 0xff;
-        fwrite(Head, sizeof(Head), 1, file);
-        fwrite(bufferIn, sizeIn, 1, file);
+        writeBlock(Head, sizeof(Head), file, FileNameOut);
+        writeBlock(bufferIn, sizeIn, file, FileNameOut);
         byte Parity = crc(bufferIn, sizeIn) ^ Head[2];
-        fwrite(&Parity, sizeof(Parity), 1, file);
+        writeBlock(&Parity, sizeof(Parity), file, FileNameOut);
     }
     free(bufferIn);
     fclose(file);
@@ -359,31 +371,31 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
             if (AddTapeHeader)
             {
                 PrepareTapeHeader(sizeIn);
-                fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
+                writeBlock(&TapeHeader, sizeof(TapeHeader), file, FileNameOut);
             }
             byte Head[3];
             if (RawData)
             {
                 Head[0] = sizeIn & 0xff;
                 Head[1] = sizeIn >> 8;
-                fwrite(Head, 2, 1, file);
-                fwrite(bufferIn, sizeIn, 1, file);
+                writeBlock(Head, 2, file, FileNameOut);
+                writeBlock(bufferIn, sizeIn, file, FileNameOut);
             } else {
                 Head[0] = (sizeIn + 2) & 0xff;
                 Head[1] = (sizeIn + 2) >> 8;
                 Head[2] = 0xff;
-                fwrite(Head, sizeof(Head), 1, file);
-                fwrite(bufferIn, sizeIn, 1, file);
+                writeBlock(Head, sizeof(Head), file, FileNameOut);
+                writeBlock(bufferIn, sizeIn, file, FileNameOut);
                 byte Parity = crc(bufferIn, sizeIn) ^ Head[2];
-                fwrite(&Parity, sizeof(Parity), 1, file);
+                writeBlock(&Parity, sizeof(Parity), file, FileNameOut);
             }
             isDone = true;
         }
         size_t blocksize = pos[0] | (pos[1] << 8);
         if ((pos + blocksize + 1) < endbuf)
-            fwrite(pos, blocksize + 2, 1, file);
+            writeBlock(pos, blocksize + 2, file, FileNameOut);
         else
-            fwrite(pos, endbuf - pos, 1, file);
+            writeBlock(pos, endbuf - pos, file, FileNameOut);
         pos += blocksize + 2;
     }
     fclose(file);
@@ -453,23 +465,23 @@ void cmdReplace(char *FileNameIn, char *FileNameOut)
                 if (AddTapeHeader)
                 {
                     PrepareTapeHeader(sizeIn);
-                    fwrite(&TapeHeader, sizeof(TapeHeader), 1, file);
+                    writeBlock(&TapeHeader, sizeof(TapeHeader), file, FileNameOut);
                 }
                 byte Head[3];
                 if (RawData)
                 {
                     Head[0] = sizeIn & 0xff;
                     Head[1] = sizeIn >> 8;
-                    fwrite(Head, 2, 1, file);
-                    fwrite(bufferIn, sizeIn, 1, file);
+                    writeBlock(Head, 2, file, FileNameOut);
+                    writeBlock(bufferIn, sizeIn, file, FileNameOut);
                 } else {
                     Head[0] = (sizeIn + 2) & 0xff;
                     Head[1] = (sizeIn + 2) >> 8;
                     Head[2] = 0xff;
-                    fwrite(Head, sizeof(Head), 1, file);
-                    fwrite(bufferIn, sizeIn, 1, file);
+                    writeBlock(Head, sizeof(Head), file, FileNameOut);
+                    writeBlock(bufferIn, sizeIn, file, FileNameOut);
                     byte Parity = crc(bufferIn, sizeIn) ^ Head[2];
-                    fwrite(&Parity, sizeof(Parity), 1, file);
+                    writeBlock(&Parity, sizeof(Parity), file, FileNameOut);
                 }
                 isDone = true;
             }
@@ -477,9 +489,9 @@ void cmdReplace(char *FileNameIn, char *FileNameOut)
         else
         {
             if ((pos + blocksize + 1) < endbuf)
-                fwrite(pos, blocksize + 2, 1, file);
+                writeBlock(pos, blocksize + 2, file, FileNameOut);
             else
-                fwrite(pos, endbuf - pos, 1, file);
+                writeBlock(pos, endbuf - pos, file, FileNameOut);
         }
         pos += blocksize + 2;
     }
@@ -537,14 +549,14 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
                     len = blocksize;
                 else
                     isComplete = false;
-                fwrite(pos + 2, len, 1 , file);
+                writeBlock(pos + 2, len, file, FileNameOut);
             } else {
                 int len = endbuf - pos - 3;
                 if (len >= (int)(blocksize - 2))
                     len = blocksize - 2;
                 else
                     isComplete = false;
-                fwrite(pos + 3, len, 1 , file);
+                writeBlock(pos + 3, len, file, FileNameOut);
             }
             fclose(file);
             isDone = true;
@@ -603,9 +615,9 @@ void cmdRemove(char *FileName)
         if (!isSelected(i))
         {
             if ((pos + blocksize + 1) < endbuf)
-                fwrite(pos, blocksize + 2, 1, file);
+                writeBlock(pos, blocksize + 2, file, FileName);
             else
-                fwrite(pos, endbuf - pos, 1, file);
+                writeBlock(pos, endbuf - pos, file, FileName);
         }
         else isDone = true;
         pos += blocksize + 2;
@@ -649,12 +661,12 @@ void cmdFix0(char *FileName)
         {
 
             if ((pos + blocksize + 1) < endbuf)
-                fwrite(pos, blocksize + 2, 1, file);
+                writeBlock(pos, blocksize + 2, file, FileName);
             else {
-                fwrite(pos, endbuf - pos, 1, file);
+                writeBlock(pos, endbuf - pos, file, FileName);
                 byte fill = 0;
                 for (int cnt = (blocksize + 2)-(endbuf - pos); cnt > 0; cnt--)
-                    fwrite(&fill, 1, 1, file);
+                    writeBlock(&fill, 1, file, FileName);
                 isDone = true;
             }
         }
@@ -667,7 +679,7 @@ void cmdFix0(char *FileName)
 
     if (!isDone)
     {
-        fprintf(stderr, "No zero size blocks found\n");
+        fprintf(stderr, "No empty blocks found\n");
         exit(1);
     }
 }
@@ -710,9 +722,9 @@ void cmdFixCrc(char *FileName)
                     pos[blocksize + 1] = crc(&pos[2], blocksize - 1);
                     isDone = true;
                 }
-                fwrite(pos, blocksize + 2, 1, file);
+                writeBlock(pos, blocksize + 2, file, FileName);
             } else 
-                fwrite(pos, endbuf - pos, 1, file);
+                writeBlock(pos, endbuf - pos, file, FileName);
             
         pos += blocksize + 2;
     }
@@ -1000,22 +1012,22 @@ int main(int argc, char **argv)
     switch (Command)
     {
         case cm_Add:
-            ChkOutFile(FileNameOut);
+            chkOutFile(FileNameOut);
             cmdAdd(FileNameIn, FileNameOut);
             break;
         case cm_Insert:
-            ChkOutFile(FileNameOut);
+            chkOutFile(FileNameOut);
             cmdInsert(FileNameIn, FileNameOut);
             break;
         case cm_Extract:
-            ChkOutFile(FileNameOut);
+            chkOutFile(FileNameOut);
             cmdExtract(FileNameIn, FileNameOut);
             break;
         case cm_Remove:
             cmdRemove(FileNameIn);
             break;
         case cm_Replace:
-            ChkOutFile(FileNameOut);
+            chkOutFile(FileNameOut);
             cmdReplace(FileNameIn, FileNameOut);
             break;
         case cm_List:
