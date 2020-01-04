@@ -166,6 +166,7 @@ void chkOutFile(char *FileName)
 
 void writeBlock(void *start, size_t size, FILE *file, const char *fileName)
 {
+    if (!size) return;
     if (!fwrite(start, size, 1, file))
     {
         fprintf(stderr, "Unable to write file \"%s\"\n", fileName);
@@ -793,11 +794,7 @@ void cmdList(char *FileNameIn)
             (unsigned int)(pos - buffer));
 
         if (!blocksize)
-        {
             puts("empty block");
-            pos += 2;
-            continue;
-        }
         else if (pos[2] == 0x00 && blocksize == 19)
         {
             struct tapeheader *Header = (struct tapeheader*)pos;
