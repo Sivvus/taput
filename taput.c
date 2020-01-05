@@ -8,16 +8,21 @@
 #define MAX_SELECTED_BLOCKS 10
 #define MAX_PATH 260
 #define MAX_FILE_SIZE 0xffff - 2
-#define APP_VERSION "1.06"
-
-#define STR_HELPER(x) #x
-#define STR(x) STR_HELPER(x)
-#define MAX_SELECTED_BLOCKS_S STR(MAX_SELECTED_BLOCKS)
+#define APP_VERSION "1.07"
 
 #define DT_BASIC     0
 #define DT_NUMARRAY  1
 #define DT_CHARARRAY 2
 #define DT_CODE      3
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+#define MAX_SELECTED_BLOCKS_S STR(MAX_SELECTED_BLOCKS)
+#ifdef BUILD_TS
+    #define BUILD_TS_S STR(BUILD_TS)
+#else
+    #define BUILD_TS_S "none"
+#endif
 
 typedef unsigned char byte;
 
@@ -81,7 +86,7 @@ bool QuietMode = false;
 void showUsage(void)
 {
     puts(
-    "TAPe UTility " APP_VERSION " by Sivvus\n"
+    "TAPe UTility v" APP_VERSION " by Sivvus (build:" BUILD_TS_S ")\n"
     "Usage: TAPUT command [options] FileIn [FileOut]\n"
     "Commands:\n"
     "    add              Add a file at the end of the \"tap\" image\n"
@@ -144,7 +149,7 @@ void PrepareTapeHeader(int size)
             break;
     }
     if (RawData)
-        size = size - 2;
+        size -= 2;
     if (size < 0) size = 0;
     TapeHeader.HLenLo = (byte)(size & 0xff);
     TapeHeader.HLenHi = (byte)(size >> 8);
@@ -228,7 +233,7 @@ bool isSelected(int BlockNo)
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void cmdAdd(char *FileNameIn, char *FileNameOut)
+void cmdAdd(const char *FileNameIn, const char *FileNameOut)
 {
     size_t sizeIn;
     byte *bufferIn = LoadFile(&sizeIn, FileNameIn);
@@ -314,7 +319,7 @@ void cmdAdd(char *FileNameIn, char *FileNameOut)
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void cmdInsert(char *FileNameIn, char *FileNameOut)
+void cmdInsert(const char *FileNameIn, const char *FileNameOut)
 {
     if (SelectedBlocks.count == 0)
     {
@@ -412,7 +417,7 @@ void cmdInsert(char *FileNameIn, char *FileNameOut)
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void cmdReplace(char *FileNameIn, char *FileNameOut)
+void cmdReplace(const char *FileNameIn, const char *FileNameOut)
 {
     if (SelectedBlocks.count != 1)
     {
@@ -510,7 +515,7 @@ void cmdReplace(char *FileNameIn, char *FileNameOut)
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void cmdExtract(char *FileNameIn, char *FileNameOut)
+void cmdExtract(const char *FileNameIn, const char *FileNameOut)
 {
     if (SelectedBlocks.count != 1 || SelectedBlocks.block[0].start != SelectedBlocks.block[0].end)
     {
@@ -583,7 +588,7 @@ void cmdExtract(char *FileNameIn, char *FileNameOut)
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void cmdRemove(char *FileName)
+void cmdRemove(const char *FileName)
 {
     if (SelectedBlocks.count == 0)
     {
@@ -635,7 +640,7 @@ void cmdRemove(char *FileName)
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void cmdFix0(char *FileName)
+void cmdFix0(const char *FileName)
 {
     bool isDone = false;
     size_t size;
@@ -687,7 +692,7 @@ void cmdFix0(char *FileName)
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void cmdFixCrc(char *FileName)
+void cmdFixCrc(const char *FileName)
 {
     if (SelectedBlocks.count != 1)
     {
@@ -696,6 +701,7 @@ void cmdFixCrc(char *FileName)
     }
 
     bool isDone = false;
+    bool isCorrupted = false;
     size_t size;
     byte *buffer = LoadFile(&size, FileName);
     if (!buffer)
@@ -724,26 +730,37 @@ void cmdFixCrc(char *FileName)
                     isDone = true;
                 }
                 writeBlock(pos, blocksize + 2, file, FileName);
-            } else 
+            } else {
                 writeBlock(pos, endbuf - pos, file, FileName);
+                if (isSelected(i)) isCorrupted = true;
+            }
             
         pos += blocksize + 2;
     }
     fclose(file);
     free(buffer);
-
+    
+    if (isCorrupted)
+    {
+        fprintf(stderr, "Warning: image \"%s\" is corrupted\n", FileName);
+        exit(1);
+    }
+    
     if (!isDone)
     {
+        fprintf(stderr, "Selected blocks were not found\n");
+        exit(1);
     }
+    
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 
-void cmdList(char *FileNameIn)
+void cmdList(const char *FileNameIn)
 {
     size_t size;
     byte *buffer = LoadFile(&size, FileNameIn);
-    if (buffer == NULL)
+    if (!buffer)
     {
         fprintf(stderr, "Unable to open file \"%s\"\n", FileNameIn);
         exit(1);
@@ -752,7 +769,11 @@ void cmdList(char *FileNameIn)
     byte *pos = buffer;
     for (int i = 1; pos < endbuf; i++)
     {
-        size_t blocksize = pos[0] | (pos[1] << 8);
+        size_t blocksize;
+        if (pos + 1 < endbuf)
+            blocksize = pos[0] | (pos[1] << 8);
+        else
+            blocksize = pos[0];
         int datasize = blocksize - 2;
         if (datasize < 0)
             datasize = 0;
@@ -767,7 +788,7 @@ void cmdList(char *FileNameIn)
             else
                 sprintf(crcStr, "<%.2X:%.2X>", (int)pos[blocksize + 1], crcCalc);
         } else
-            strcpy(crcStr,"<-->");
+            strcpy(crcStr, "<-->");
         // blocktype
         char typeStr[7];
         if (blocksize && &pos[2] < endbuf)

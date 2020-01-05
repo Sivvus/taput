@@ -5,12 +5,16 @@ LDFLAGS=-s -fmerge-all-constants -fno-ident -ffunction-sections \
         -fdata-sections -Wl,--gc-sections -Wl,--build-id=none -static-libgcc
 OUT=taput
 OBJ=taput.o
-CLN=rm -f
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 ifeq ($(OS),Windows_NT)
 	OUT:=$(OUT).exe
-	CLN:=del /Q
+	BUILD_TS=$(shell echo %date:~8,2%%date:~3,2%%date:~0,2%%time:~0,2%%time:~3,2%)
+	CLN=del /Q
+else
+	BUILD_TS=$(shell date +%y%m%d%H%M)
+	CLN=rm -f
 endif
+CFLAGS+=-DBUILD_TS="$(BUILD_TS)"
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
 .PHONY: all clean
