@@ -726,8 +726,12 @@ void cmdFixCrc(const char *FileName)
             {
                 if (isSelected(i) && blocksize > 1)
                 {
-                    pos[blocksize + 1] = crc(&pos[2], blocksize - 1);
-                    isDone = true;
+                    byte ccrc = crc(&pos[2], blocksize - 1);
+                    if (pos[blocksize + 1] != ccrc)
+                    {
+                        pos[blocksize + 1] = ccrc;
+                        isDone = true;
+                    }
                 }
                 writeBlock(pos, blocksize + 2, file, FileName);
             } else {
@@ -743,12 +747,11 @@ void cmdFixCrc(const char *FileName)
     if (isCorrupted)
     {
         fprintf(stderr, "Warning: image \"%s\" is corrupted\n", FileName);
-        exit(1);
     }
     
     if (!isDone)
     {
-        fprintf(stderr, "Selected blocks were not found\n");
+        fprintf(stderr, "No changes have been made\n");
         exit(1);
     }
     
